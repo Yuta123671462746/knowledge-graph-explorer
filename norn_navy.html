@@ -1,0 +1,476 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ナレッジグラフ探索システム</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 20px;
+            background-color: #f4f7f6;
+            color: #333;
+        }
+        #container {
+            background-color: #ffffff;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+            max-width: 800px;
+            margin: 0 auto;
+        }
+        h1, h2 {
+            color: #2c3e50;
+            text-align: center;
+            margin-bottom: 25px;
+        }
+        #current-path {
+            font-size: 1.1em;
+            margin-bottom: 20px;
+            padding: 10px;
+            background-color: #e9ecef;
+            border-left: 5px solid #007bff;
+            color: #495057;
+        }
+        .options-section {
+            margin-bottom: 25px;
+        }
+        .options-section h3 {
+            color: #34495e;
+            margin-bottom: 15px;
+            border-bottom: 1px solid #dee2e6;
+            padding-bottom: 5px;
+        }
+        .button-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 15px;
+        }
+        button {
+            padding: 12px 20px;
+            font-size: 1em;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: background-color 0.3s ease, transform 0.2s ease;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        button.category-btn {
+            background-color: #007bff;
+            color: white;
+        }
+        button.category-btn:hover {
+            background-color: #0056b3;
+            transform: translateY(-2px);
+        }
+        button.action-btn {
+            background-color: #28a745;
+            color: white;
+        }
+        button.action-btn:hover {
+            background-color: #218838;
+            transform: translateY(-2px);
+        }
+        button.search-btn {
+            background-color: #ffc107;
+            color: #333;
+        }
+        button.search-btn:hover {
+            background-color: #e0a800;
+            transform: translateY(-2px);
+        }
+        button.exit-btn {
+            background-color: #dc3545;
+            color: white;
+        }
+        button.exit-btn:hover {
+            background-color: #c82333;
+            transform: translateY(-2px);
+        }
+        button:disabled {
+            background-color: #cccccc;
+            cursor: not-allowed;
+        }
+        #search-section {
+            display: flex;
+            gap: 10px;
+            margin-top: 20px;
+        }
+        #search-input {
+            flex-grow: 1;
+            padding: 10px;
+            border: 1px solid #ced4da;
+            border-radius: 5px;
+            font-size: 1em;
+        }
+        #message {
+            margin-top: 20px;
+            padding: 10px;
+            border-radius: 5px;
+            background-color: #ffeeba;
+            color: #856404;
+            display: none; /* Initially hidden */
+        }
+    </style>
+</head>
+<body>
+    <div id="container">
+        <h1>ナレッジグラフ探索システム</h1>
+        <p id="current-path">現在の位置: 【ROOT】</p>
+
+        <div id="options-display" class="options-section">
+            <h3>サブカテゴリ:</h3>
+            <div id="category-buttons" class="button-grid">
+                </div>
+            <div id="noun-list">
+                </div>
+        </div>
+
+        <div id="main-actions" class="options-section">
+            <h3>操作:</h3>
+            <div class="button-grid">
+                <button class="action-btn" id="select-subcategory-btn">1. サブカテゴリを選択</button>
+                <button class="action-btn" id="go-to-root-btn">2. ルートに戻る</button>
+                <button class="search-btn" id="keyword-search-btn">3. キーワード検索</button>
+                <button class="exit-btn" id="exit-btn">4. 終了</button>
+            </div>
+        </div>
+
+        <div id="search-section" style="display: none;">
+            <input type="text" id="search-input" placeholder="検索したい名詞を入力...">
+            <button class="search-btn" id="execute-search-btn">検索実行</button>
+            <button class="action-btn" id="cancel-search-btn">キャンセル</button>
+        </div>
+
+        <div id="search-results" class="options-section" style="display: none;">
+            <h3>検索結果:</h3>
+            <div id="search-result-buttons" class="button-grid">
+                </div>
+            <button class="action-btn" id="cancel-search-results-btn" style="margin-top: 15px;">0. キャンセル</button>
+        </div>
+
+        <p id="message"></p>
+    </div>
+
+    <script>
+        let graph = {}; // JSONデータがロードされる
+        let currentPath = [];
+        let currentNode = graph;
+        let searchResults = []; // 検索結果を保持
+
+        async function loadGraphData() {
+            try {
+                const response = await fetch('noun_knowledge_graph.json');
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                graph = await response.json(); // ここでJSONとしてパースし、結果を待つ
+                currentNode = graph;
+                displayOptions();
+            } catch (error) {
+                console.error('Error loading graph data:', error);
+                // エラーメッセージをユーザーに表示するなど、適切なエラーハンドリングを追加
+                displayMessage('エラー: ナレッジグラフデータの読み込みに失敗しました。', 'error');
+            }
+        }
+
+        function displayOptions() {
+            const currentPathDisplay = document.getElementById('current-path');
+            const categoryButtonsDiv = document.getElementById('category-buttons');
+            const nounListDiv = document.getElementById('noun-list');
+            const mainActionsDiv = document.getElementById('main-actions');
+            const selectSubcategoryBtn = document.getElementById('select-subcategory-btn');
+            const messageDisplay = document.getElementById('message');
+
+            // 表示のリセット
+            categoryButtonsDiv.innerHTML = '';
+            nounListDiv.innerHTML = '';
+            messageDisplay.style.display = 'none';
+
+            // 現在のパスを表示
+            currentPathDisplay.textContent = '現在の位置: ' + (currentPath.length ? currentPath.join(' > ') : '【ROOT】');
+
+            // メインアクションボタンの表示/非表示を管理 (サブカテゴリ選択後)
+            if (currentPath.length > 0 && !(typeof currentNode === 'object' && !Array.isArray(currentNode) && Object.keys(currentNode).length > 0)) {
+                // サブカテゴリの選択が終わった（リーフノードに到達した）場合
+                mainActionsDiv.style.display = 'none';
+            } else {
+                mainActionsDiv.style.display = 'block';
+            }
+
+            if (typeof currentNode === 'object' && !Array.isArray(currentNode)) {
+                // サブカテゴリがある場合 (辞書)
+                const keys = Object.keys(currentNode);
+                if (keys.length > 0) {
+                    document.querySelector('#options-display h3').textContent = 'サブカテゴリ:';
+                    keys.forEach((key, index) => {
+                        const button = document.createElement('button');
+                        button.classList.add('category-btn');
+                        button.textContent = `${index + 1}. ${key}`;
+                        button.onclick = () => navigateToCategory(key);
+                        categoryButtonsDiv.appendChild(button);
+                    });
+                    selectSubcategoryBtn.style.display = 'block'; // 「サブカテゴリを選択」ボタンを表示
+                } else {
+                    document.querySelector('#options-display h3').textContent = '該当するサブカテゴリはありません';
+                    selectSubcategoryBtn.style.display = 'none'; // 「サブカテゴリを選択」ボタンを非表示
+                }
+            } else if (Array.isArray(currentNode)) {
+                // 名詞リストの場合 (リスト)
+                document.querySelector('#options-display h3').textContent = '該当する名詞リスト:';
+                if (currentNode.length > 0) {
+                    currentNode.forEach((item, index) => {
+                        const p = document.createElement('p');
+                        p.textContent = `${index + 1}. ${item}`;
+                        nounListDiv.appendChild(p);
+                    });
+                } else {
+                    nounListDiv.textContent = '該当する名詞はありません。';
+                }
+                selectSubcategoryBtn.style.display = 'none'; // 「サブカテゴリを選択」ボタンを非表示
+            } else {
+                // リーフノードに到達 (文字列など)
+                document.querySelector('#options-display h3').textContent = 'リーフノードに到達しました';
+                selectSubcategoryBtn.style.display = 'none'; // 「サブカテゴリを選択」ボタンを非表示
+            }
+
+            updateActionButtons();
+        }
+
+        function updateActionButtons() {
+            const goBackToRootBtn = document.getElementById('go-to-root-btn');
+            const selectSubcategoryBtn = document.getElementById('select-subcategory-btn');
+            const keywordSearchBtn = document.getElementById('keyword-search-btn');
+            const exitBtn = document.getElementById('exit-btn');
+
+            if (currentPath.length === 0) {
+                // ROOTの場合
+                goBackToRootBtn.disabled = true;
+            } else {
+                goBackToRootBtn.disabled = false;
+            }
+
+            if (typeof currentNode === 'object' && !Array.isArray(currentNode) && Object.keys(currentNode).length > 0) {
+                selectSubcategoryBtn.style.display = 'block';
+            } else {
+                selectSubcategoryBtn.style.display = 'none';
+            }
+
+            // サブカテゴリ選択後の表示制御
+            if (currentPath.length > 0 && !(typeof currentNode === 'object' && !Array.isArray(currentNode) && Object.keys(currentNode).length > 0)) {
+                // リーフノードにいるか、空のサブカテゴリにいる場合
+                selectSubcategoryBtn.style.display = 'none';
+                keywordSearchBtn.style.display = 'none';
+                exitBtn.style.display = 'none';
+                document.getElementById('main-actions').style.display = 'none';
+                displaySpecialNavigationOptions(); // 0でルートに戻る、1以降で親カテゴリに戻るなどのオプション
+            } else {
+                document.getElementById('main-actions').style.display = 'block';
+                selectSubcategoryBtn.style.display = 'block';
+                keywordSearchBtn.style.display = 'block';
+                exitBtn.style.display = 'block';
+                document.getElementById('special-navigation-options').style.display = 'none';
+            }
+        }
+
+        function displaySpecialNavigationOptions() {
+            const specialNavDiv = document.getElementById('special-navigation-options');
+            if (!specialNavDiv) { // 初回のみ作成
+                const div = document.createElement('div');
+                div.id = 'special-navigation-options';
+                div.classList.add('options-section');
+                div.innerHTML = '<h3>移動オプション:</h3><div class="button-grid"></div>';
+                document.getElementById('container').appendChild(div);
+            }
+            const buttonGrid = document.querySelector('#special-navigation-options .button-grid');
+            buttonGrid.innerHTML = ''; // リセット
+
+            const rootBtn = document.createElement('button');
+            rootBtn.classList.add('action-btn');
+            rootBtn.textContent = '0. ルートに戻る';
+            rootBtn.onclick = () => {
+                currentPath = [];
+                currentNode = graph;
+                displayOptions();
+            };
+            buttonGrid.appendChild(rootBtn);
+
+            if (currentPath.length > 1) { // 少なくとも1つ上の階層に戻れる場合
+                const parentPath = currentPath.slice(0, currentPath.length - 1);
+                const parentNodeName = currentPath[currentPath.length - 2]; // 親カテゴリ名
+                const parentBtn = document.createElement('button');
+                parentBtn.classList.add('action-btn');
+                parentBtn.textContent = `1. ${parentNodeName} に戻る`;
+                parentBtn.onclick = () => {
+                    navigateBackToParent();
+                };
+                buttonGrid.appendChild(parentBtn);
+            }
+
+            document.getElementById('special-navigation-options').style.display = 'block';
+        }
+
+        function navigateToCategory(key) {
+            currentPath.push(key);
+            currentNode = currentNode[key];
+            displayOptions();
+        }
+
+        function navigateBackToParent() {
+            if (currentPath.length > 0) {
+                currentPath.pop(); // 現在のノードをパスから削除
+                let tempNode = graph;
+                for (const segment of currentPath) {
+                    tempNode = tempNode[segment];
+                }
+                currentNode = tempNode;
+                displayOptions();
+            }
+        }
+
+        function goToRoot() {
+            currentPath = [];
+            currentNode = graph;
+            displayOptions();
+        }
+
+        function displayMessage(msg, type = 'info') {
+            const messageDisplay = document.getElementById('message');
+            messageDisplay.textContent = msg;
+            messageDisplay.style.display = 'block';
+            messageDisplay.style.backgroundColor = type === 'error' ? '#f8d7da' : '#ffeeba';
+            messageDisplay.style.color = type === 'error' ? '#721c24' : '#856404';
+        }
+
+        function showSearchInput() {
+            document.getElementById('main-actions').style.display = 'none';
+            document.getElementById('options-display').style.display = 'none';
+            document.getElementById('search-section').style.display = 'flex';
+            document.getElementById('search-results').style.display = 'none';
+            document.getElementById('search-input').value = '';
+            document.getElementById('message').style.display = 'none';
+        }
+
+        function hideSearchInput() {
+            document.getElementById('search-section').style.display = 'none';
+            document.getElementById('search-results').style.display = 'none';
+            document.getElementById('main-actions').style.display = 'block';
+            document.getElementById('options-display').style.display = 'block';
+            displayOptions(); // 状態をリフレッシュ
+        }
+
+        function performSearch() {
+            const keyword = document.getElementById('search-input').value.trim();
+            if (!keyword) {
+                displayMessage('検索キーワードを入力してください。');
+                return;
+            }
+
+            searchResults = [];
+            const queue = [{ node: graph, path: [] }];
+
+            while (queue.length > 0) {
+                const { node, path } = queue.shift();
+
+                if (typeof node === 'object' && !Array.isArray(node)) {
+                    for (const key in node) {
+                        if (key.toLowerCase().includes(keyword.toLowerCase())) {
+                            searchResults.push(path.concat(key));
+                        }
+                        queue.push({ node: node[key], path: path.concat(key) });
+                    }
+                } else if (Array.isArray(node)) {
+                    node.forEach(item => {
+                        if (typeof item === 'string' && item.toLowerCase().includes(keyword.toLowerCase())) {
+                            searchResults.push(path.concat(item));
+                        }
+                    });
+                }
+            }
+
+            displaySearchResults(keyword);
+        }
+
+        function displaySearchResults(keyword) {
+            const searchResultsDiv = document.getElementById('search-results');
+            const searchResultButtonsDiv = document.getElementById('search-result-buttons');
+            const messageDisplay = document.getElementById('message');
+
+            searchResultButtonsDiv.innerHTML = '';
+            messageDisplay.style.display = 'none';
+            searchResultsDiv.style.display = 'block';
+            document.getElementById('search-section').style.display = 'none'; // 検索入力欄を非表示
+
+            if (searchResults.length === 0) {
+                displayMessage(`'${keyword}' が見つかりませんでした。`);
+                searchResultsDiv.style.display = 'none'; // 結果がない場合は非表示に
+                document.getElementById('main-actions').style.display = 'block'; // メインアクションに戻る
+                document.getElementById('options-display').style.display = 'block';
+                displayOptions();
+                return;
+            }
+
+            searchResults.forEach((path, index) => {
+                const button = document.createElement('button');
+                button.classList.add('category-btn'); // 遷移ボタンとして利用
+                button.textContent = `${index + 1}. ${path.join(' > ')}`;
+                button.onclick = () => navigateToPath(path);
+                searchResultButtonsDiv.appendChild(button);
+            });
+        }
+
+        function navigateToPath(path) {
+            currentPath = [];
+            currentNode = graph;
+
+            let validPath = true;
+            for (const nodeName of path) {
+                if (typeof currentNode === 'object' && !Array.isArray(currentNode) && currentNode.hasOwnProperty(nodeName)) {
+                    currentPath.push(nodeName);
+                    currentNode = currentNode[nodeName];
+                } else if (Array.isArray(currentNode) && currentNode.includes(nodeName)) {
+                    currentPath.push(nodeName);
+                    break; // リストの要素に到達したら終了
+                } else {
+                    displayMessage(`パスが無効です: ${path.join(' > ')}`, 'error');
+                    validPath = false;
+                    break;
+                }
+            }
+            document.getElementById('search-results').style.display = 'none'; // 検索結果を非表示
+            document.getElementById('main-actions').style.display = 'block'; // メインアクションを表示
+            document.getElementById('options-display').style.display = 'block';
+            displayOptions();
+            if (validPath) {
+                displayMessage(`${path.join(' > ')} に移動しました。`);
+            }
+        }
+
+        // イベントリスナー
+        document.getElementById('select-subcategory-btn').addEventListener('click', () => {
+            // サブカテゴリが選択された後の動作は、各カテゴリボタンのonclickで処理されるため、
+            // このボタン自体はここでは特別な動作をさせない。
+            // ユーザーに「サブカテゴリを選択」というアクションがあることを示すためのボタン。
+            // 本来は、ここでユーザーに選択肢を選ばせるためのUI（番号入力など）を表示する必要があるが、
+            // ボタンで直接選択できるようにしているため、このボタン自体は情報提供用。
+            displayMessage('リストからサブカテゴリを選択してください。');
+        });
+        document.getElementById('go-to-root-btn').addEventListener('click', goToRoot);
+        document.getElementById('keyword-search-btn').addEventListener('click', showSearchInput);
+        document.getElementById('exit-btn').addEventListener('click', () => {
+            displayMessage('システムを終了しました。ページを閉じてください。');
+            // 必要に応じてボタンを無効化するなど、終了状態にする
+            document.getElementById('container').innerHTML = '<h2>ナレッジグラフ探索システムは終了しました。</h2>';
+        });
+
+        document.getElementById('execute-search-btn').addEventListener('click', performSearch);
+        document.getElementById('cancel-search-btn').addEventListener('click', hideSearchInput);
+        document.getElementById('cancel-search-results-btn').addEventListener('click', hideSearchInput); // 検索結果からのキャンセルも同じ動作
+
+        // 初期ロード
+        document.addEventListener('DOMContentLoaded', loadGraphData);
+    </script>
+</body>
+</html>
